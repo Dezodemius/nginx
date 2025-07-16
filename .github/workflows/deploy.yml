@@ -1,1 +1,46 @@
+name: Deploy to Server
 
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Copy files to server
+      run: |
+        rsync -az --delete \
+          -e "ssh -i ~/.ssh/id_rsa" \
+          ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nginx-proxy/
+
+    - name: Create .env on server
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          cd /opt/nginx-proxy/
+          cat > .env <<EOL
+POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+EOL
+          mkdir -p .secrets
+          echo "${{ secrets.GHCR_TOKEN }}" > .secrets/ghcr_token
+        EOF
+
+    - name: Start services
+      run: |
+        ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          cd /opt/nginx-proxy/
+          docker-compose pull
+          docker-compose up -d
+        EOF
