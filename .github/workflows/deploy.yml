@@ -20,12 +20,12 @@ jobs:
 
     - name: Sync project to server
       run: |
-        rsync -az --delete -e "ssh -i ~/.ssh/id_rsa" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nginx-proxy/
+        rsync -az --delete -e "ssh -i ~/.ssh/id_rsa" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/nginx-proxy/
 
     - name: Create .env and secrets on server
       run: |
         ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          cd /opt/nginx-proxy/
+          cd ~/nginx-proxy/
 
           echo "POSTGRES_USER=$POSTGRES_USER" > .env
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
@@ -43,7 +43,7 @@ jobs:
     - name: Deploy with Docker Compose
       run: |
         ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          cd /opt/nginx-proxy/
+          cd ~/nginx-proxy/
           docker-compose pull
           docker-compose up -d
         EOF
