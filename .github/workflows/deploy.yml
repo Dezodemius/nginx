@@ -2,15 +2,17 @@ name: Deploy to Server
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: true
+        default: 'main'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
     - name: Set up SSH
       run: |
         mkdir -p ~/.ssh
@@ -18,32 +20,35 @@ jobs:
         chmod 600 ~/.ssh/id_rsa
         ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Sync project to server
-      run: |
-        rsync -az --delete -e "ssh -i ~/.ssh/id_rsa" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/nginx/
 
-    - name: Create .env and secrets on server
+    - name: Test SSH connection
+      run: ssh -vvv -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} exit
+
+    - name: Deploy on server via git
       run: |
-        ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+        ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
           cd ~/nginx/
+          # Если директории нет - клонируем
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/Dezodemius/nginx.git .
+          fi
+          git fetch origin
+          git checkout ${{ github.event.inputs.branch }}
+          git pull origin ${{ github.event.inputs.branch }}
 
+          # Создаём .env и секреты
           echo "POSTGRES_USER=$POSTGRES_USER" > .env
           echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" >> .env
           echo "POSTGRES_DB=$POSTGRES_DB" >> .env
-
           mkdir -p .secrets
           echo "$GHCR_TOKEN" > .secrets/ghcr_token
+
+          # Запускаем docker-compose
+          docker-compose pull
+          docker-compose up -d
         EOF
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
         GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-
-    - name: Deploy with Docker Compose
-      run: |
-        ssh -i ~/.ssh/id_rsa ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-          cd ~/nginx/
-          docker-compose pull
-          docker-compose up -d
-        EOF
